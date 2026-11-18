@@ -1,0 +1,18 @@
+EVIDENCIAS PENDIENTES DE CAPTURAR EN EL CELULAR
+
+Guarda capturas reales de la aplicación ejecutándose:
+1. Aplicación abierta antes de iniciar cámara.
+2. Cámara activa sin mano visible (debe indicar que no detecta mano).
+3. Palma abierta: landmarks, etiqueta y acción.
+4. Puño cerrado: landmarks, etiqueta y acción.
+5. Victoria: landmarks, etiqueta y acción.
+6. Pulgar arriba: landmarks, etiqueta y marcador incrementado.
+7. Cámara detenida: confirmar que se liberó.
+
+Graba un video de 1 a 3 minutos mostrando:
+- Inicio de la aplicación y permiso de cámara.
+- Los cuatro gestos y sus respuestas.
+- Los puntos de referencia dibujados.
+- Detener cámara.
+
+No uses imágenes simuladas como evidencia de funcionamiento. Completa la tabla de pruebas del Informe con lo que realmente ocurra.

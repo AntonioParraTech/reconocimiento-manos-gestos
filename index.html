@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reconocimiento de manos y gestos</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f5f9;color:#172b45;font-family:Arial,sans-serif}
+main{max-width:900px;margin:auto;padding:18px}.panel{background:white;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 3px 14px #152b4512}
+h1{font-size:1.55rem;margin:4px 0}p{line-height:1.45}.videoBox{position:relative;background:#111;border-radius:12px;overflow:hidden;min-height:230px}
+video,canvas{display:block;width:100%;height:auto;transform:scaleX(-1)}canvas{position:absolute;inset:0}
+.status{font-weight:bold;color:#176b4b}.big{font-size:1.4rem;font-weight:bold}.muted{color:#65758b}
+button{border:0;border-radius:10px;padding:13px 18px;background:#155eaa;color:white;font-weight:bold;font-size:1rem;margin:5px 5px 5px 0}
+button.stop{background:#596579}button:disabled{opacity:.5}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.tile{background:#eef4fb;padding:12px;border-radius:10px}
+@media(max-width:520px){main{padding:10px}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<section class="panel">
+<h1>Reconocimiento de manos y gestos</h1>
+<p>Prototipo de visión artificial con JavaScript y MediaPipe. Permite reconocer gestos en tiempo real desde la cámara.</p>
+<p id="status" class="status">Estado: listo para iniciar</p>
+<button id="start">Iniciar cámara</button><button id="stop" class="stop" disabled>Detener cámara</button>
+<div class="videoBox"><video id="video" playsinline muted></video><canvas id="overlay"></canvas></div>
+</section>
+<section class="panel">
+<div class="grid">
+<div class="tile"><div class="muted">Gesto reconocido</div><div id="gesture" class="big">Ninguno</div></div>
+<div class="tile"><div class="muted">Confianza</div><div id="confidence" class="big">—</div></div>
+<div class="tile"><div class="muted">Manos detectadas</div><div id="hands" class="big">0</div></div>
+<div class="tile"><div class="muted">Acción</div><div id="action" class="big">Esperando gesto</div></div>
+</div>
+<p id="message" aria-live="polite">Presiona “Iniciar cámara” y concede permiso cuando el navegador lo solicite.</p>
+</section>
+<section class="panel">
+<h2>Gestos incluidos</h2>
+<ul><li>Palma abierta (Open_Palm): muestra “¡Hola!”</li><li>Puño cerrado (Closed_Fist): pausa el contador de demostración.</li><li>Victoria / V (Victory): muestra una confirmación.</li><li>Pulgar arriba (Thumb_Up): suma un punto al marcador.</li></ul>
+<p><b>Marcador:</b> <span id="score">0</span> puntos. Las acciones se ejecutan al cambiar de gesto para evitar repetirlas en cada fotograma.</p>
+</section>
+<section class="panel"><p class="muted">El procesamiento se realiza en el navegador con el modelo de MediaPipe. Se necesita conexión a Internet para cargar la biblioteca y el modelo. La cámara solo se activa después de pulsar el botón.</p></section>
+</main>
+<script type="module">
+import { FilesetResolver, GestureRecognizer, DrawingUtils }
+ from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+const video=document.getElementById("video"), canvas=document.getElementById("overlay"), ctx=canvas.getContext("2d");
+const statusEl=document.getElementById("status"), gestureEl=document.getElementById("gesture"), confEl=document.getElementById("confidence"), handsEl=document.getElementById("hands"), actionEl=document.getElementById("action"), messageEl=document.getElementById("message"), scoreEl=document.getElementById("score");
+const startBtn=document.getElementById("start"), stopBtn=document.getElementById("stop");
+let recognizer=null, stream=null, raf=0, lastVideoTime=-1, lastGesture="", score=0, drawingUtils=null;
+const labels={Open_Palm:"Palma abierta",Closed_Fist:"Puño cerrado",Victory:"Victoria (V)",Thumb_Up:"Pulgar arriba",Pointing_Up:"Dedo índice arriba",Thumb_Down:"Pulgar abajo",ILoveYou:"Te quiero"};
+function actionFor(name){
+ if(name==="Open_Palm"){messageEl.textContent="¡Hola! Se detectó una palma abierta.";return "Mostrar saludo";}
+ if(name==="Closed_Fist"){messageEl.textContent="Puño detectado: demostración pausada.";return "Pausar demostración";}
+ if(name==="Victory"){messageEl.textContent="¡Victoria! Gesto de confirmación reconocido.";return "Mostrar confirmación";}
+ if(name==="Thumb_Up"){score++;scoreEl.textContent=score;messageEl.textContent="¡Correcto! Se agregó un punto.";return "Aumentar marcador";}
+ return "Sin acción asignada";
+}
+async function setup(){
+ statusEl.textContent="Estado: cargando modelo…";
+ const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+ recognizer=await GestureRecognizer.createFromOptions(vision,{
+  baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"},
+  runningMode:"VIDEO",numHands:1,
+  cannedGesturesClassifierOptions:{scoreThreshold:0.45,maxResults:1}
+ });
+ drawingUtils=new DrawingUtils(ctx);
+}
+async function start(){
+ try{
+  startBtn.disabled=true;
+  if(!recognizer) await setup();
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:640},height:{ideal:480}},audio:false});
+  video.srcObject=stream; await video.play();
+  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  statusEl.textContent="Estado: cámara activa";
+  stopBtn.disabled=false;lastVideoTime=-1;loop();
+ }catch(e){
+  statusEl.textContent="No se pudo iniciar: "+(e.message||e);
+  messageEl.textContent="Comprueba que abriste esta página mediante HTTPS y que diste permiso para usar la cámara.";
+  startBtn.disabled=false;
+ }
+}
+function loop(){
+ if(video.currentTime!==lastVideoTime){
+  lastVideoTime=video.currentTime;
+  const result=recognizer.recognizeForVideo(video,performance.now());
+  ctx.save();ctx.clearRect(0,0,canvas.width,canvas.height);ctx.translate(canvas.width,0);ctx.scale(-1,1);
+  if(result.landmarks?.length){
+   for(const landmarks of result.landmarks){
+    drawingUtils.drawConnectors(landmarks,GestureRecognizer.HAND_CONNECTIONS,{color:"#00e5a8",lineWidth:4});
+    drawingUtils.drawLandmarks(landmarks,{color:"#ffcc33",lineWidth:2,radius:4});
+   }
+  }
+  ctx.restore();
+  const count=result.landmarks?.length||0;handsEl.textContent=count;
+  if(count && result.gestures?.[0]?.[0]){
+   const top=result.gestures[0][0], name=top.categoryName;
+   gestureEl.textContent=labels[name]||name;confEl.textContent=(top.score*100).toFixed(1)+"%";
+   if(name!==lastGesture){actionEl.textContent=actionFor(name);lastGesture=name;}
+  }else{
+   gestureEl.textContent=count?"No clasificado":"Ninguno";confEl.textContent="—";
+   actionEl.textContent=count?"Ajusta la posición de la mano":"Esperando mano";
+   messageEl.textContent=count?"Mano detectada; gesto no reconocido.":"No se detecta una mano.";
+   lastGesture="";
+  }
+ }
+ raf=requestAnimationFrame(loop);
+}
+function stop(){
+ cancelAnimationFrame(raf);
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+ video.pause();video.srcObject=null;ctx.clearRect(0,0,canvas.width,canvas.height);
+ statusEl.textContent="Estado: cámara detenida";handsEl.textContent="0";
+ gestureEl.textContent="Ninguno";confEl.textContent="—";actionEl.textContent="Esperando gesto";
+ messageEl.textContent="La cámara se ha liberado correctamente.";lastGesture="";
+ startBtn.disabled=false;stopBtn.disabled=true;
+}
+startBtn.addEventListener("click",start);stopBtn.addEventListener("click",stop);
+window.addEventListener("pagehide",stop);
+</script></body></html>
